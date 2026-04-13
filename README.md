@@ -1,5 +1,5 @@
 # Qualcomm Sahara / Firehose Attack Client / Diag Tools
-(c) B. Kerler 2018-2025
+(c) B. Kerler 2018-2026
 Licensed under GPLv3 license.
 
 # Be aware that if you use anything from this repository in any (including) compiled form, you need to opensource your code as well !
@@ -111,8 +111,7 @@ git submodule update --init --recursive
 # Manual install
 chmod +x ./install-linux-edl-drivers.sh
 bash ./install-linux-edl-drivers.sh
-python3 setup.py build
-sudo python3 setup.py install
+pip3 install .
 ```
 
 If you have SELinux enabled, you may need to set it to permissive mode temporarily to prevent permission issues. SELinux is commonly used by RedHat-like distros (for example, RHEL, Fedora, and CentOS). You can set it to permissive run-time until next boot with `sudo setenforce 0`.
@@ -124,8 +123,7 @@ brew install libusb git
 git clone https://github.com/bkerler/edl.git
 cd edl
 git submodule update --init --recursive
-python3 setup.py build
-sudo python3 setup.py install
+pip3 install .
 ```
 
 ### Windows:
