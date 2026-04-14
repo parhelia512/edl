@@ -1,63 +1,63 @@
-# Ensure script runs with elevated privileges
+# --- Privilèges Administrateur ---
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-    echo "This script requires administrator privileges. Restarting as administrator..."
+    Write-Host "Ce script nécessite des privilèges d'administrateur. Redémarrage..." -ForegroundColor Yellow
     Start-Process powershell "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
     exit
 }
 
-# Check if winget is available
-while (!(gcm winget -ErrorAction SilentlyContinue)) {
-    echo "The 'winget' command is unavailable. Please update 'App Installer' through Microsoft Store and then press Enter to continue."
-    echo ''
-    echo 'Microsoft Store will open automatically in 7 seconds.'
-    sleep 7
+# --- Vérification Winget ---
+while (!(Get-Command winget -ErrorAction SilentlyContinue)) {
+    Write-Host "Winget est introuvable. Ouverture du Microsoft Store..." -ForegroundColor Cyan
     Start-Process "ms-windows-store://pdp?hl=en-us&gl=us&productid=9nblggh4nns1"
+    Write-Host "Appuyez sur Entrée une fois 'App Installer' mis à jour."
     $null = $host.UI.RawUI.ReadKey()
-    echo ''
 }
 
-# Update winget sources
-echo "Updating winget sources..."
+# --- Installation des paquets ---
+Write-Host "Mise à jour des sources et installation des outils..." -ForegroundColor Green
 winget source update
-
-# Install required packages using winget
-$packages = @(
-    "akeo.ie.Zadig",
-    "Git.Git",
-    "Python.Python.3.9"
-)
+$packages = @("akeo.ie.Zadig", "Git.Git", "Python.Python.3.9")
 
 foreach ($package in $packages) {
-    echo "Installing $package..."
     winget install --id=$package --accept-package-agreements --accept-source-agreements --disable-interactivity --scope machine
 }
 
-# Clone the edl repository
-echo "Cloning edl repository..."
-cd $env:ProgramFiles
-& "${env:ProgramFiles}\Git\cmd\git" clone --recurse-submodules https://github.com/bkerler/edl.git
-
-# Install Python dependencies
-echo "Installing Python dependencies..."
-& "${env:ProgramFiles}\Python39\Scripts\pip3" install -r "${env:ProgramFiles}\edl\requirements.txt"
-
-# Add edl to the system PATH
-echo "Adding edl to the system PATH..."
-$currentPath = [Environment]::GetEnvironmentVariable("Path", [System.EnvironmentVariableTarget]::Machine)
-$edlPath = Resolve-Path "${env:ProgramFiles}\edl"
-
-if (-not ($currentPath -split ';' -contains $edlPath)) {
-    [Environment]::SetEnvironmentVariable("Path", "$currentPath;$edlPath", [System.EnvironmentVariableTarget]::Machine)
-	echo ''
-    echo "Added $edlPath to the system PATH."
+# --- Détection de Git (Ta logique avec &) ---
+$gitcmd = ""
+if (Test-Path "${env:ProgramFiles}\Git\cmd\git.exe") {
+    $gitcmd = "${env:ProgramFiles}\Git\cmd\git.exe"
+} elseif (Get-Command "git" -ErrorAction SilentlyContinue) {
+    $gitcmd = "git"
 } else {
-    echo "$edlPath is already in the system PATH."
+    Write-Host "Git introuvable, abandon..." -ForegroundColor Red
+    exit
 }
 
-echo ""
-echo "'edl', 'zadig' installed successfully. You can now open a new PowerShell or Terminal window to use these tools."
-echo ""
-echo "Don't forget to run 'zadig' to install the WinUSB driver for QHSUSB_BULK devices."
-echo ""
-echo "Setup completed successfully. Press any key to continue"
+# --- Clonage du dépôt EDL ---
+$targetDir = Join-Path $env:ProgramFiles "edl"
+if (-not (Test-Path $targetDir)) {
+    Write-Host "Clonage de EDL dans $targetDir..." -ForegroundColor Cyan
+    # On force le clonage dans le dossier edl spécifiquement
+    & $gitcmd clone --recurse-submodules https://github.com/bkerler/edl.git $targetDir
+}
+
+# --- Installation des dépendances Python ---
+Write-Host "Installation des dépendances Python..." -ForegroundColor Cyan
+# On cherche pip de manière plus flexible au cas où le dossier n'est pas "Python39"
+if (Get-Command "pip3" -ErrorAction SilentlyContinue) {
+    & pip3 install -r "$targetDir\requirements.txt"
+} else {
+    & python -m pip install -r "$targetDir\requirements.txt"
+}
+
+# --- Ajout au PATH ---
+$currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+if ($currentPath -split ';' -notcontains $targetDir) {
+    [Environment]::SetEnvironmentVariable("Path", "$currentPath;$targetDir", "Machine")
+    Write-Host "EDL ajouté au PATH système." -ForegroundColor Green
+}
+
+Write-Host "`nInstallation terminée avec succès !" -ForegroundColor Green
+Write-Host "N'oubliez pas de lancer 'Zadig' pour les drivers USB."
+Write-Host "Appuyez sur une touche pour quitter..."
 $null = $host.UI.RawUI.ReadKey()
