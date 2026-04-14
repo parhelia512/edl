@@ -1,63 +1,73 @@
-# --- Privilèges Administrateur ---
-if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-    Write-Host "Ce script nécessite des privilèges d'administrateur. Redémarrage..." -ForegroundColor Yellow
-    Start-Process powershell "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
-    exit
-}
-
-# --- Vérification Winget ---
+# --- Check if winget is available ---
 while (!(Get-Command winget -ErrorAction SilentlyContinue)) {
-    Write-Host "Winget est introuvable. Ouverture du Microsoft Store..." -ForegroundColor Cyan
+    Write-Host "The 'winget' command is unavailable." -ForegroundColor Red
+    Write-Host "Please update 'App Installer' through Microsoft Store. Opening Store in 5 seconds..."
+    Start-Sleep -Seconds 5
     Start-Process "ms-windows-store://pdp?hl=en-us&gl=us&productid=9nblggh4nns1"
-    Write-Host "Appuyez sur Entrée une fois 'App Installer' mis à jour."
+    Write-Host "Press any key after update is complete..."
     $null = $host.UI.RawUI.ReadKey()
 }
 
-# --- Installation des paquets ---
-Write-Host "Mise à jour des sources et installation des outils..." -ForegroundColor Green
-winget source update
-$packages = @("akeo.ie.Zadig", "Git.Git", "Python.Python.3.9")
+# --- Update winget sources and install packages ---
+Write-Host "Updating winget sources..." -ForegroundColor Cyan
+& winget source update
+
+$packages = @(
+    "akeo.ie.Zadig",
+    "Git.Git",
+    "Python.Python.3.9"
+)
 
 foreach ($package in $packages) {
-    winget install --id=$package --accept-package-agreements --accept-source-agreements --disable-interactivity --scope machine
+    Write-Host "Installing $package..." -ForegroundColor Cyan
+    & winget install --id=$package --accept-package-agreements --accept-source-agreements --disable-interactivity --scope machine
 }
 
-# --- Détection de Git (Ta logique avec &) ---
+# --- Check for Git location ---
+Write-Host "Checking for Git..." -ForegroundColor Cyan
 $gitcmd = ""
 if (Test-Path "${env:ProgramFiles}\Git\cmd\git.exe") {
+    Write-Host "Git found in local Program Files."
     $gitcmd = "${env:ProgramFiles}\Git\cmd\git.exe"
 } elseif (Get-Command "git" -ErrorAction SilentlyContinue) {
+    Write-Host "Git Command found in PATH."
     $gitcmd = "git"
 } else {
-    Write-Host "Git introuvable, abandon..." -ForegroundColor Red
+    Write-Host "Git not found, Aborting..." -ForegroundColor Red
     exit
 }
 
-# --- Clonage du dépôt EDL ---
-$targetDir = Join-Path $env:ProgramFiles "edl"
-if (-not (Test-Path $targetDir)) {
-    Write-Host "Clonage de EDL dans $targetDir..." -ForegroundColor Cyan
-    # On force le clonage dans le dossier edl spécifiquement
-    & $gitcmd clone --recurse-submodules https://github.com/bkerler/edl.git $targetDir
-}
+# --- Clone the edl repository ---
+$edlFolder = Join-Path $env:ProgramFiles "edl"
 
-# --- Installation des dépendances Python ---
-Write-Host "Installation des dépendances Python..." -ForegroundColor Cyan
-# On cherche pip de manière plus flexible au cas où le dossier n'est pas "Python39"
-if (Get-Command "pip3" -ErrorAction SilentlyContinue) {
-    & pip3 install -r "$targetDir\requirements.txt"
+if (-not (Test-Path $edlFolder)) {
+    Write-Host "Cloning edl repository into $edlFolder..." -ForegroundColor Cyan
+    # Using the Call Operator & as requested
+    & $gitcmd clone --recurse-submodules https://github.com/bkerler/edl.git $edlFolder
 } else {
-    & python -m pip install -r "$targetDir\requirements.txt"
+    Write-Host "EDL folder already exists. Skipping clone." -ForegroundColor Yellow
 }
 
-# --- Ajout au PATH ---
-$currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-if ($currentPath -split ';' -notcontains $targetDir) {
-    [Environment]::SetEnvironmentVariable("Path", "$currentPath;$targetDir", "Machine")
-    Write-Host "EDL ajouté au PATH système." -ForegroundColor Green
+# --- Install Python dependencies ---
+Write-Host "Installing Python dependencies..." -ForegroundColor Cyan
+# Using 'python -m pip' is safer than hardcoding the pip3 path
+& python -m pip install -r "$edlFolder\requirements.txt"
+
+# --- Add edl to the system PATH ---
+Write-Host "Updating system PATH..." -ForegroundColor Cyan
+$currentPath = [Environment]::GetEnvironmentVariable("Path", [System.EnvironmentVariableTarget]::Machine)
+$edlPath = Resolve-Path $edlFolder
+
+if ($currentPath -split ';' -notcontains $edlPath) {
+    [Environment]::SetEnvironmentVariable("Path", "$currentPath;$edlPath", [System.EnvironmentVariableTarget]::Machine)
+    Write-Host "Successfully added $edlPath to the system PATH." -ForegroundColor Green
+} else {
+    Write-Host "$edlPath is already in the system PATH." -ForegroundColor Yellow
 }
 
-Write-Host "`nInstallation terminée avec succès !" -ForegroundColor Green
-Write-Host "N'oubliez pas de lancer 'Zadig' pour les drivers USB."
-Write-Host "Appuyez sur une touche pour quitter..."
+# --- Final Instructions ---
+Write-Host "`nSetup completed successfully!" -ForegroundColor Green
+Write-Host "1. Run 'zadig' to install the WinUSB driver for QHSUSB_BULK devices."
+Write-Host "2. Restart your terminal to use the 'edl' command."
+Write-Host "`nPress any key to exit..."
 $null = $host.UI.RawUI.ReadKey()
