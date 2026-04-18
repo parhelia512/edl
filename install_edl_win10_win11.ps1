@@ -5,22 +5,20 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
     exit
 }
 
-# Check if winget is available
-while (!(gcm winget -ErrorAction SilentlyContinue)) {
-    echo "The 'winget' command is unavailable. Please update 'App Installer' through Microsoft Store and then press Enter to continue."
-    echo ''
-    echo 'Microsoft Store will open automatically in 7 seconds.'
-    sleep 7
+# --- Check if winget is available ---
+while (!(Get-Command winget -ErrorAction SilentlyContinue)) {
+    Write-Host "The 'winget' command is unavailable." -ForegroundColor Red
+    Write-Host "Please update 'App Installer' through Microsoft Store. Opening Store in 5 seconds..."
+    Start-Sleep -Seconds 5
     Start-Process "ms-windows-store://pdp?hl=en-us&gl=us&productid=9nblggh4nns1"
+    Write-Host "Press any key after update is complete..."
     $null = $host.UI.RawUI.ReadKey()
-    echo ''
 }
 
-# Update winget sources
-echo "Updating winget sources..."
-winget source update
+# --- Update winget sources and install packages ---
+Write-Host "Updating winget sources..." -ForegroundColor Cyan
+& winget source update
 
-# Install required packages using winget
 $packages = @(
     "akeo.ie.Zadig",
     "Git.Git",
@@ -28,36 +26,55 @@ $packages = @(
 )
 
 foreach ($package in $packages) {
-    echo "Installing $package..."
-    winget install --id=$package --accept-package-agreements --accept-source-agreements --disable-interactivity --scope machine
+    Write-Host "Installing $package..." -ForegroundColor Cyan
+    & winget install --id=$package --accept-package-agreements --accept-source-agreements --disable-interactivity --scope machine
 }
 
-# Clone the edl repository
-echo "Cloning edl repository..."
-cd $env:ProgramFiles
-& "${env:ProgramFiles}\Git\cmd\git" clone --recurse-submodules https://github.com/bkerler/edl.git
-
-# Install Python dependencies
-echo "Installing Python dependencies..."
-& "${env:ProgramFiles}\Python39\Scripts\pip3" install -r "${env:ProgramFiles}\edl\requirements.txt"
-
-# Add edl to the system PATH
-echo "Adding edl to the system PATH..."
-$currentPath = [Environment]::GetEnvironmentVariable("Path", [System.EnvironmentVariableTarget]::Machine)
-$edlPath = Resolve-Path "${env:ProgramFiles}\edl"
-
-if (-not ($currentPath -split ';' -contains $edlPath)) {
-    [Environment]::SetEnvironmentVariable("Path", "$currentPath;$edlPath", [System.EnvironmentVariableTarget]::Machine)
-	echo ''
-    echo "Added $edlPath to the system PATH."
+# --- Check for Git location ---
+Write-Host "Checking for Git..." -ForegroundColor Cyan
+$gitcmd = ""
+if (Test-Path "${env:ProgramFiles}\Git\cmd\git.exe") {
+    Write-Host "Git found in local Program Files."
+    $gitcmd = "${env:ProgramFiles}\Git\cmd\git.exe"
+} elseif (Get-Command "git" -ErrorAction SilentlyContinue) {
+    Write-Host "Git Command found in PATH."
+    $gitcmd = "git"
 } else {
-    echo "$edlPath is already in the system PATH."
+    Write-Host "Git not found, Aborting..." -ForegroundColor Red
+    exit
 }
 
-echo ""
-echo "'edl', 'zadig' installed successfully. You can now open a new PowerShell or Terminal window to use these tools."
-echo ""
-echo "Don't forget to run 'zadig' to install the WinUSB driver for QHSUSB_BULK devices."
-echo ""
-echo "Setup completed successfully. Press any key to continue"
+# --- Clone the edl repository ---
+$edlFolder = Join-Path $env:ProgramFiles "edl"
+
+if (-not (Test-Path $edlFolder)) {
+    Write-Host "Cloning edl repository into $edlFolder..." -ForegroundColor Cyan
+    # Using the Call Operator & as requested
+    & $gitcmd clone --recurse-submodules https://github.com/bkerler/edl.git $edlFolder
+} else {
+    Write-Host "EDL folder already exists. Skipping clone." -ForegroundColor Yellow
+}
+
+# --- Install Python dependencies ---
+Write-Host "Installing Python dependencies..." -ForegroundColor Cyan
+# Using 'python -m pip' is safer than hardcoding the pip3 path
+& python -m pip install -r "$edlFolder\requirements.txt"
+
+# --- Add edl to the system PATH ---
+Write-Host "Updating system PATH..." -ForegroundColor Cyan
+$currentPath = [Environment]::GetEnvironmentVariable("Path", [System.EnvironmentVariableTarget]::Machine)
+$edlPath = Resolve-Path $edlFolder
+
+if ($currentPath -split ';' -notcontains $edlPath) {
+    [Environment]::SetEnvironmentVariable("Path", "$currentPath;$edlPath", [System.EnvironmentVariableTarget]::Machine)
+    Write-Host "Successfully added $edlPath to the system PATH." -ForegroundColor Green
+} else {
+    Write-Host "$edlPath is already in the system PATH." -ForegroundColor Yellow
+}
+
+# --- Final Instructions ---
+Write-Host "`nSetup completed successfully!" -ForegroundColor Green
+Write-Host "1. Run 'zadig' to install the WinUSB driver for QHSUSB_BULK devices."
+Write-Host "2. Restart your terminal to use the 'edl' command."
+Write-Host "`nPress any key to exit..."
 $null = $host.UI.RawUI.ReadKey()
